@@ -1,5 +1,38 @@
 require 'openssl'
 
+def retry_loop(opts={}, &block)
+  opts = {:tries => 1, :on => Exception}.merge(opts)
+
+  exception_type, tries = opts[:on], opts[:tries]
+
+  begin
+    return yield
+  rescue exception_type => e
+    tries -= 1
+
+    if tries > 0
+      $stdout << "#{opts[:msg]}, retrying\n" if opts[:msg]
+      sleep opts[:sleep].to_f if opts[:sleep]
+      retry
+    end
+
+    raise
+  end
+end
+
+def generate_rsa_key
+  retry_opts = {
+    :on => OpenSSL::PKey::RSAError,
+    :msg => "RSA key generation failed",
+    :sleep => 2,
+    :tries => 5
+  }
+
+  retry_loop(retry_opts) do
+    OpenSSL::PKey::RSA.new(2048)
+  end
+end
+
 def create_ca_cert(outdir)
   paths = {
     :config => File.join(outdir, "ca.cnf"),
@@ -11,7 +44,7 @@ def create_ca_cert(outdir)
 
   $stdout << "Generating CA artifacts in #{outdir}\n"
 
-  key = OpenSSL::PKey::RSA.new(2048)
+  key = generate_rsa_key
 
   pem = OpenSSL::X509::Certificate.new
   pem.version = 3
@@ -59,7 +92,7 @@ def create_ssl_cert(
 
   FileUtils.mkdir_p(outdir)
 
-  key = OpenSSL::PKey::RSA.new(2048)
+  key = generate_rsa_key
 
   ca = OpenSSL::X509::Certificate.new(File.read(ca_cert_paths[:pem]))
   ca_key = OpenSSL::PKey::RSA.new(File.read(ca_cert_paths[:key]))
